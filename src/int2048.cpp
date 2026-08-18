@@ -140,20 +140,27 @@ int2048 int2048::multiply_abs(const int2048 &a, const int2048 &b) {
       }
     }
   } else {
+    // Split base-10000 limbs into base-100 coefficients before the FFT.  The
+    // smaller convolution coefficients keep floating-point rounding safely
+    // below one unit even for the largest required products.
+    const int convolution_base = 100;
+    const std::size_t coefficient_count = 2 * (a.digits.size() + b.digits.size());
     int n = 1;
-    while (n < static_cast<int>(a.digits.size() + b.digits.size())) n <<= 1;
+    while (n < static_cast<int>(coefficient_count)) n <<= 1;
     std::vector<std::complex<double> > fa(n), fb(n);
-    for (std::size_t i = 0; i < a.digits.size(); ++i) fa[i] = a.digits[i];
-    for (std::size_t i = 0; i < b.digits.size(); ++i) fb[i] = b.digits[i];
+    for (std::size_t i = 0; i < a.digits.size(); ++i) { fa[2 * i] = a.digits[i] % convolution_base; fa[2 * i + 1] = a.digits[i] / convolution_base; }
+    for (std::size_t i = 0; i < b.digits.size(); ++i) { fb[2 * i] = b.digits[i] % convolution_base; fb[2 * i + 1] = b.digits[i] / convolution_base; }
     fft(fa, false); fft(fb, false);
     for (int i = 0; i < n; ++i) fa[i] *= fb[i];
     fft(fa, true);
-    result.digits.resize(a.digits.size() + b.digits.size() + 1);
+    std::vector<int> coefficients(coefficient_count + 1);
     long long carry = 0;
-    for (std::size_t i = 0; i < result.digits.size(); ++i) {
+    for (std::size_t i = 0; i < coefficients.size(); ++i) {
       long long x = carry + (i < static_cast<std::size_t>(n) ? static_cast<long long>(fa[i].real() + 0.5) : 0);
-      result.digits[i] = static_cast<int>(x % base); carry = x / base;
+      coefficients[i] = static_cast<int>(x % convolution_base); carry = x / convolution_base;
     }
+    result.digits.resize((coefficients.size() + 1) / 2);
+    for (std::size_t i = 0; i < result.digits.size(); ++i) result.digits[i] = coefficients[2 * i] + (2 * i + 1 < coefficients.size() ? convolution_base * coefficients[2 * i + 1] : 0);
   }
   result.normalize(); return result;
 }
